@@ -1,11 +1,18 @@
 import os
 import sys
 import errno
-import PyPDF2
 import hashlib
 import shutil
 import time
 import datetime
+from io import StringIO
+from pdfminer.converter import TextConverter
+from pdfminer.layout import LAParams
+from pdfminer.pdfdocument import PDFDocument
+from pdfminer.pdfinterp import PDFResourceManager
+from pdfminer.pdfinterp import PDFPageInterpreter
+from pdfminer.pdfpage import PDFPage
+from pdfminer.pdfparser import PDFParser
 from datetime import datetime
 
 
@@ -25,26 +32,25 @@ def giveKeywordlist(fileName):
     lines = [item.strip() for item in lines]
     return lines
 
-def get_page_content(page):
-    rsrcmgr = PDFResourceManager()
-    output = StringIO()
-    device = TextConverter(rsrcmgr, output, laparams=LAParams())
-    interpreter = PDFPageInterpreter(rsrcmgr, device)
-    interpreter.process_page(page)
-    return output.getvalue()
+def get_page_content(pdf_path):
+    text=""
+    output_string = StringIO()
+    with open(pdf_path, 'rb') as in_file:
+        parser = PDFParser(in_file)
+        doc = PDFDocument(parser)
+        rsrcmgr = PDFResourceManager()
+        device = TextConverter(rsrcmgr, output_string, laparams=LAParams())
+        interpreter = PDFPageInterpreter(rsrcmgr, device)
+        for page in PDFPage.create_pages(doc):
+            interpreter.process_page(page)
+            text=text+" "+output_string.getvalue()
+    return text
 
 
 def findKeywordsInFile(fileName,keywords):
     keywordsInFile = []
     position=0
-    page_text=""
-    # open the pdf file
-    object = PyPDF2.PdfFileReader(fileName)
-    # get number of pages
-    NumPages = object.getNumPages()
-    for i in range(0, NumPages):
-        PageObj = object.getPage(i)
-        page_text = page_text+PageObj.extractText().lower()
+    page_text=get_page_content(fileName)
 
     for keyword in keywords:
         if keyword in page_text:
@@ -103,15 +109,48 @@ def moveFile2FolderWithYearName(fname):
     make_sure_path_exists(destinationPath)
     #shutil.move(fname,destination)
 
+def getNewFileName(fname,filename_keywords):
+    filename_date=""
+    head_tail = os.path.split(fname)
+    tail=head_tail[1]
+    newFileName=""
+    if tail[:8].isdigit():
+        tmp_date=int(tail[:8])
+        if 19000101 <= tmp_date <= 21001231:
+            filename_date=str(tmp_date)
+            filename_md5=getFileInfo_md5(fname)
+            newFileName=head_tail[0]+"/"+filename_date+"_["+filename_keywords+"]_"+filename_md5+".pdf"
+        else:
+            filename_date=getFileInfo_creationDate_fromFile(fname)
+            newFileName=head_tail[0]+"/"+filename_date+"_"+tail
+    else:
+        filename_date=getFileInfo_creationDate_fromFile(fname)
+        newFileName=head_tail[0]+"/"+filename_date+"_"+tail
+    return newFileName
+
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
-        print('Invalid Numbers of Arguments. Script will be terminated.')
+    if len(sys.argv) != 3:
+        print('Invalid Numbers of Arguments. Script will be terminated. [whichFolder] [keywordlist]')
     else:
         dirName = str(sys.argv[1])
+        keywordlistFilename = str(sys.argv[2])
         print('look into folder:',dirName)
+
+
         fileArray = giveFileNamesInDirectory(dirName)
-        fileArraySize=len(fileArray)
-        print('numberOfFilesFound',fileArraySize)
+        size=len(fileArray)
+        print('numberOfFilesFound',size)
+
+        print('keywords:',keywordlistFilename)
+        keywords=giveKeywordlist(keywordlistFilename)
+        size=len(keywords)
+        print('numberOfKeywordsFound',size)
+
         for file in fileArray:
+           keywordsInFile=findKeywordsInFile(file,keywords)
+           filename_keywords=getKeywordString(keywordsInFile)
+           print('filename_keywords:'+filename_keywords)
+           newFileName=getNewFileName(file,filename_keywords);
+           print('new filename'+newFileName)
            moveFile2FolderWithYearName(file)
         print('finished')
