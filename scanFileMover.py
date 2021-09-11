@@ -15,14 +15,23 @@ from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfparser import PDFParser
 from datetime import datetime
 
+PARAM_file_extension_pdf=".pdf"
+PARAM_file_separator="/"
 
+def log(message):
+    print("#scanFileMover_"+message)
+#given a directoryname
+#returns an array with all filenames that a directory contains of
+#filters only the files that ends with ".pdf"
 def giveFileNamesInDirectory(dirName):
     fileArray = []
     for file in os.listdir(dirName):
-        if file.endswith(".pdf"):
-            fileArray.append(os.path.abspath(dirName+"/"+file))
+        if file.lower().endswith(PARAM_file_extension_pdf):
+            fileArray.append(os.path.abspath(dirName+PARAM_file_separator+file))
     return fileArray
 
+#given a fileName
+#returns an array with the content of the file
 def giveKeywordlist(fileName):
     lines = []
     text_file = open(fileName, "r")
@@ -43,14 +52,20 @@ def get_page_content(pdf_path):
         interpreter = PDFPageInterpreter(rsrcmgr, device)
         for page in PDFPage.create_pages(doc):
             interpreter.process_page(page)
-            text=text+" "+output_string.getvalue()
+            text=text+" "+output_string.getvalue().lower()
     return text
 
 
 def findKeywordsInFile(fileName,keywords):
     keywordsInFile = []
     position=0
-    page_text=get_page_content(fileName)
+    page_text=""
+    try:
+        page_text=get_page_content(fileName)
+
+    except Exception as e:
+        log("file not readable: "+fileName)
+        #raise
 
     for keyword in keywords:
         if keyword in page_text:
@@ -98,18 +113,21 @@ def getYearFolderName(fname):
     return year
 
 
-def moveFile2FolderWithYearName(fname):
+def moveFile2FolderWithYearName(fname,newFileName):
     year=getYearFolderName(fname)
     #split the full filepath into directory=head and filename=tail
     head_tail = os.path.split(fname)
 #lets build the destinationFileName
-    destinationPath=head_tail[0] +"/"+ str(year) + "/"
-    destination= destinationPath + head_tail[1]
-    print("###move: ",fname,"   ",destination)
+    destinationPath=head_tail[0] +"/"+ str(year) + PARAM_file_separator
+    destination= destinationPath+newFileName
+    log("###move: "+fname+"   "+destination)
     make_sure_path_exists(destinationPath)
-    #shutil.move(fname,destination)
+    shutil.move(fname,destination)
 
 def getNewFileName(fname,filename_keywords):
+    #getattr(logging, loglevel.upper())
+    #logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"))
+
     filename_date=""
     head_tail = os.path.split(fname)
     tail=head_tail[1]
@@ -119,38 +137,40 @@ def getNewFileName(fname,filename_keywords):
         if 19000101 <= tmp_date <= 21001231:
             filename_date=str(tmp_date)
             filename_md5=getFileInfo_md5(fname)
-            newFileName=head_tail[0]+"/"+filename_date+"_["+filename_keywords+"]_"+filename_md5+".pdf"
+            newFileName=filename_date+"_["+filename_keywords+"]_"+filename_md5+PARAM_file_extension_pdf
         else:
             filename_date=getFileInfo_creationDate_fromFile(fname)
-            newFileName=head_tail[0]+"/"+filename_date+"_"+tail
+            newFileName=filename_date+"_"+tail
     else:
         filename_date=getFileInfo_creationDate_fromFile(fname)
-        newFileName=head_tail[0]+"/"+filename_date+"_"+tail
+        newFileName=filename_date+"_"+tail
     return newFileName
 
 if __name__ == '__main__':
-    if len(sys.argv) != 3:
-        print('Invalid Numbers of Arguments. Script will be terminated. [whichFolder] [keywordlist]')
+    if len(sys.argv) < 3:
+        log('Invalid Numbers of Arguments. Script will be terminated. [whichFolder] [keywordlist]')
     else:
         dirName = str(sys.argv[1])
         keywordlistFilename = str(sys.argv[2])
-        print('look into folder:',dirName)
+        log('look into folder:'+dirName)
 
 
         fileArray = giveFileNamesInDirectory(dirName)
-        size=len(fileArray)
-        print('numberOfFilesFound',size)
+        numberOfFilesFound=len(fileArray)
+        log('numberOfFilesFound:'+str(numberOfFilesFound))
 
-        print('keywords:',keywordlistFilename)
+        log('keywords:'+keywordlistFilename)
         keywords=giveKeywordlist(keywordlistFilename)
         size=len(keywords)
-        print('numberOfKeywordsFound',size)
-
+        log('numberOfKeywordsFound:'+str(size))
+        filecounter=1
         for file in fileArray:
+           log('file:'+str(filecounter)+"/"+str(numberOfFilesFound))
+           filecounter=filecounter+1
            keywordsInFile=findKeywordsInFile(file,keywords)
            filename_keywords=getKeywordString(keywordsInFile)
-           print('filename_keywords:'+filename_keywords)
+           log('filename_keywords:'+filename_keywords)
            newFileName=getNewFileName(file,filename_keywords);
-           print('new filename'+newFileName)
-           moveFile2FolderWithYearName(file)
-        print('finished')
+           log('new filename'+newFileName)
+           moveFile2FolderWithYearName(file,newFileName)
+        log('finished')
